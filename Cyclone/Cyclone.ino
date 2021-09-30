@@ -10,6 +10,14 @@
 		* OR make it lihg the actual program and just implement a win %
 
 
+
+	Program Mechanics
+
+	* Updating the LEDs takes a long time so we can't do this every time LEDs change
+	* Instead, update on time intervals (30fps or something) and recalculate where light is based on speed (m/s)
+	* 
+
+
 */
 
 //////////////////// DEBUG SETUP ////////////////////
@@ -44,10 +52,15 @@ const uint8_t Button[NUM_BTNS] = {7, 8, 9, 10}; // Pins for buttons
 Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRBW + NEO_KHZ800);
 
 
+
+const int pwmIntervals = 50;
+float R;
+
+
 //////////////////// MISC VARS ////////////////////
 
 #define DEBOUNCE 		5								// (ms) Button debounce time
-uint8_t meteorSpeed = 1; 							// (ms) Time between lighting pixels
+uint16_t meteorSpeed = 300; 						// (pixels per second) Time between lighting pixels
 
 // State tracking
 gameStates currentState = ST_RUN;			// State game start up into
@@ -70,6 +83,8 @@ void setup()
 	leds.begin(); 							// Initialise Pixels
 	leds.show();								// Turn them all off
 	leds.setBrightness(BRIGHTNESS);
+
+	R = (pwmIntervals * log10(2))/(log10(255));
 
 
 	// Initialise Serial debug
@@ -97,40 +112,68 @@ void loop()
 	static uint32_t lastLED_Update = 0;
 	static uint32_t lastGame_Update = 0;
 
-
-	if (millis() - lastGame_Update > meteorSpeed)
-	{
-		lastGame_Update = millis();
-
-		switch (currentState) 
-		{
-			case ST_RUN: 	
-				leds.clear();
-				dRamp_W(0, position++, 10);
+	// Check buttons - do this as much as possible
+		// If button press
+			// Work out where meteor was when button pressed
+			// If it's close enough to button, WIN!
+			// If else, fail
+			// But also throw in some gambling logic to balance wins/losses 
 
 
-				break;
+	// Update LEDs - to this at 30fps - this is also 
+	// if (millis() - lastLED_Update > REFRESH_INT)
+	// {
 
-			case ST_STOP:
-				break;
+		// Calculate distance we moved since last iteration
+		// distance = speed * time
+		// position += (meteorSpeed * REFRESH_INT) / 1000;
 
-			default:
-				break;
-		}
+		position += (meteorSpeed * (micros() - lastLED_Update)) / 1000000;
+		lastLED_Update = micros();
 
-		if (position >= NUM_LEDS)
-			position = 0;
+		while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
+			position -= NUM_LEDS;
+
+		dRamp_W(1, position++, pwmIntervals);
+
+		leds.show();
+	// }
+
+
+
+
+	// Update game state ??
+
+	// if (millis() - lastGame_Update > meteorSpeed)
+	// {
+	// 	lastGame_Update = millis();
+
+	// 	switch (currentState) 
+	// 	{
+	// 		case ST_RUN: 	
+	// 			// leds.clear();
+	// 			dRamp_W(1, position++, pwmIntervals);
+	// 			// delay(1);
+
+
+	// 			break;
+
+	// 		case ST_STOP:
+	// 			break;
+
+	// 		default:
+	// 			break;
+	// 	}
+
+	// 	if (position >= NUM_LEDS)
+	// 		position = 0;
 
 	// drawPlayers();
 
 
 		// update LEDs
-		if (millis() - lastLED_Update > REFRESH_INT)
-		{
-			lastLED_Update = millis();
-			leds.show();
-		}
-	}
+
+	// }
 
 }
 
@@ -158,12 +201,15 @@ void dRamp_W(bool dir, uint16_t pos, uint8_t len)
 	uint8_t intensity = 255;
 	uint8_t dimStep = intensity/len;
 
+
 	for (uint8_t i = 0; i < len; ++i)
 	{
-		leds.setPixelColor(pixelNum, 0, 0, 0, intensity);
+		intensity = pow (2, (i / R)) - 1;
+		leds.setPixelColor(pixelNum, 0, 0, 255, intensity);
 
-		intensity /= 2;
+		// intensity -=  dimStep;
 
+		Serial.println(intensity);
 
 		// Go to next LED & loop around if going off edge of pixel strip
 		if (dir)
