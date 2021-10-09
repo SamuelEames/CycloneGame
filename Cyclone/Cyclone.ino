@@ -57,10 +57,16 @@ const int pwmIntervals = 50;
 float R;
 
 
+// COLOURS
+uint32_t COLOUR[] = {0x00FFFF00, 0xFF220000, 0xFF00FF00};
+uint32_t COL_BLACK = 0x00000000;
+uint32_t COL_WHITE = 0x000000FF;
+
+
 //////////////////// MISC VARS ////////////////////
 
 #define DEBOUNCE 		5								// (ms) Button debounce time
-uint16_t meteorSpeed = 300; 						// (pixels per second) Time between lighting pixels
+uint16_t meteorSpeed = 600; 						// (pixels per second) Time between lighting pixels
 
 // State tracking
 gameStates currentState = ST_RUN;			// State game start up into
@@ -134,7 +140,7 @@ void loop()
 		while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
 			position -= NUM_LEDS;
 
-		dRamp_W(1, position++, pwmIntervals);
+		dRamp_W(1, position++, pwmIntervals); // Draw meteore
 
 		leds.show();
 	// }
@@ -201,11 +207,17 @@ void dRamp_W(bool dir, uint16_t pos, uint8_t len)
 	uint8_t intensity = 255;
 	uint8_t dimStep = intensity/len;
 
+			//0xWWRRGGBB
+	leds.fill(0x00110000, 0, NUM_LEDS);
+
 
 	for (uint8_t i = 0; i < len; ++i)
 	{
 		intensity = pow (2, (i / R)) - 1;
-		leds.setPixelColor(pixelNum, 0, 0, 255, intensity);
+		// leds.setPixelColor(pixelNum, 0, 0, 255, intensity);
+
+		// Draw meteor on top of current LED state
+		leds.setPixelColor(pixelNum, (leds.getPixelColor(pixelNum) | (uint32_t) intensity<<24));
 
 		// intensity -=  dimStep;
 
