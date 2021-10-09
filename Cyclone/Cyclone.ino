@@ -57,10 +57,11 @@ const int pwmIntervals = 50;
 float R;
 
 
-// COLOURS
-uint32_t COLOUR[] = {0x00FFFF00, 0xFF220000, 0xFF00FF00};
+// COLOURS -- 0xWWRRGGBB, Cyan, 	Yellow, 		Magenta		Green
+uint32_t COLOUR[] = {0x0000FFFF, 0x00FFDD00, 0x007700FF, 0x0000FF00};
+uint32_t COLOUR_DIM[] = {0x00001919, 0x00191200, 0x00120019, 0x00001900};
 uint32_t COL_BLACK = 0x00000000;
-uint32_t COL_WHITE = 0x000000FF;
+uint32_t COL_WHITE = 0xFF000000;
 
 
 //////////////////// MISC VARS ////////////////////
@@ -73,7 +74,7 @@ gameStates currentState = ST_RUN;			// State game start up into
 gameStates lastState = ST_NULL;
 
 
-uint8_t numPlayers = NUM_BTNS;								// Number of players (set during power up) <= NUM_BTNS
+uint8_t numPlayers = 3;								// Number of players (set during power up) <= NUM_BTNS
 
 
 void setup() 
@@ -140,7 +141,8 @@ void loop()
 		while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
 			position -= NUM_LEDS;
 
-		dRamp_W(1, position++, pwmIntervals); // Draw meteore
+		drawField();
+		dRamp_W(1, position++, pwmIntervals); // Draw meteor
 
 		leds.show();
 	// }
@@ -188,6 +190,22 @@ void drawField()
 {
 	// Draws field design
 
+				//0xWWRRGGBB
+
+	uint8_t blockLen = NUM_LEDS/numPlayers;
+
+
+	// Colour dim background
+	for (uint8_t i = 0; i < numPlayers; ++i)
+		leds.fill(COLOUR_DIM[i], blockLen*i, blockLen*i + blockLen);
+
+	// Fill in remainder LEDs when not even split
+	leds.fill(COLOUR_DIM[numPlayers], blockLen*numPlayers, NUM_LEDS);
+
+	// Drawer player aim markers
+
+
+
 	return;
 }
 
@@ -206,9 +224,6 @@ void dRamp_W(bool dir, uint16_t pos, uint8_t len)
 	uint16_t pixelNum = pos; 	 							// Track current pixel
 	uint8_t intensity = 255;
 	uint8_t dimStep = intensity/len;
-
-			//0xWWRRGGBB
-	leds.fill(0x00110000, 0, NUM_LEDS);
 
 
 	for (uint8_t i = 0; i < len; ++i)
