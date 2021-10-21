@@ -18,6 +18,15 @@
 	* 
 
 
+
+		SCORING
+			Because I'm not going to spit out tickets I've decided to score this differently.
+			If a player successfully captures the meteor within their markers,
+			their markers take two steps in and their opponents markers go one step out.
+
+			At some point the meteor speed increases / decreases... maybe randomly per round?
+
+
 */
 
 //////////////////// DEBUG SETUP ////////////////////
@@ -59,7 +68,7 @@ float R;
 
 // COLOURS -- 0xWWRRGGBB, Cyan, 	Yellow, 		Magenta		Green
 uint32_t COLOUR[] = {0x0000FFFF, 0x00FFDD00, 0x007700FF, 0x0000FF00};
-uint32_t COLOUR_DIM[] = {0x00001919, 0x00191200, 0x00120019, 0x00001900};
+uint32_t COLOUR_DIM[] = {0x00000A0A, 0x000A0700, 0x0007000A, 0x00000A00};
 uint32_t COL_BLACK = 0x00000000;
 uint32_t COL_WHITE = 0xFF000000;
 
@@ -75,6 +84,11 @@ gameStates lastState = ST_NULL;
 
 
 uint8_t numPlayers = 3;								// Number of players (set during power up) <= NUM_BTNS
+uint16_t midPoint[NUM_BTNS];					// Midpoint (pixelNum) of each player zone
+uint8_t	playerHWidth[NUM_BTNS];				// Length (in pixels) from midpoint to player markers
+																			// This kinda doubles as score
+
+uint8_t maxMarkerHWidth; 							// Max width that markers can get to
 
 
 void setup() 
@@ -92,6 +106,18 @@ void setup()
 	leds.setBrightness(BRIGHTNESS);
 
 	R = (pwmIntervals * log10(2))/(log10(255));
+
+
+	// Calculate mid points & marker widths
+	maxMarkerHWidth = NUM_LEDS / (numPlayers *2);
+
+
+	for (uint8_t i = 0; i < numPlayers; ++i)
+	{
+		midPoint[i] = maxMarkerHWidth + (NUM_LEDS/numPlayers * i); 	// Calculate midpoints
+		playerHWidth[i] = maxMarkerHWidth / 4;											// Initial marker widths
+	}
+
 
 
 	// Initialise Serial debug
@@ -119,7 +145,10 @@ void loop()
 	static uint32_t lastLED_Update = 0;
 	static uint32_t lastGame_Update = 0;
 
+
 	// Check buttons - do this as much as possible
+	uint8_t btnPressed = checkButtons();
+
 		// If button press
 			// Work out where meteor was when button pressed
 			// If it's close enough to button, WIN!
@@ -127,61 +156,31 @@ void loop()
 			// But also throw in some gambling logic to balance wins/losses 
 
 
-	// Update LEDs - to this at 30fps - this is also 
-	// if (millis() - lastLED_Update > REFRESH_INT)
-	// {
+	// Update LEDs
 
-		// Calculate distance we moved since last iteration
-		// distance = speed * time
-		// position += (meteorSpeed * REFRESH_INT) / 1000;
+	// Calculate distance we moved since last iteration
+	// distance = speed * time
+	// position += (meteorSpeed * REFRESH_INT) / 1000;
 
-		position += (meteorSpeed * (micros() - lastLED_Update)) / 1000000;
-		lastLED_Update = micros();
+	position += (meteorSpeed * (micros() - lastLED_Update)) / 1000000;
+	lastLED_Update = micros();
 
-		while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
-			position -= NUM_LEDS;
+	while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
+		position -= NUM_LEDS;
 
-		drawField();
-		dRamp_W(1, position++, pwmIntervals); // Draw meteor
+	drawField();
+	dRamp_W(1, position++, pwmIntervals); // Draw meteor
 
-		leds.show();
-	// }
+	leds.show();
 
 
+	if (btnPressed != NUM_BTNS)
+	{
+		// Change Game State
 
-
-	// Update game state ??
-
-	// if (millis() - lastGame_Update > meteorSpeed)
-	// {
-	// 	lastGame_Update = millis();
-
-	// 	switch (currentState) 
-	// 	{
-	// 		case ST_RUN: 	
-	// 			// leds.clear();
-	// 			dRamp_W(1, position++, pwmIntervals);
-	// 			// delay(1);
-
-
-	// 			break;
-
-	// 		case ST_STOP:
-	// 			break;
-
-	// 		default:
-	// 			break;
-	// 	}
-
-	// 	if (position >= NUM_LEDS)
-	// 		position = 0;
-
-	// drawPlayers();
-
-
-		// update LEDs
-
-	// }
+		while (1)
+			;
+	}
 
 }
 
@@ -190,10 +189,8 @@ void drawField()
 {
 	// Draws field design
 
-				//0xWWRRGGBB
-
 	uint8_t blockLen = NUM_LEDS/numPlayers;
-
+	uint8_t markerWidth = 3;
 
 	// Colour dim background
 	for (uint8_t i = 0; i < numPlayers; ++i)
@@ -203,15 +200,11 @@ void drawField()
 	leds.fill(COLOUR_DIM[numPlayers], blockLen*numPlayers, NUM_LEDS);
 
 	// Drawer player aim markers
-
-
-
-	return;
-}
-
-void drawPlayers()
-{
-	// Adds players to pixel buffer
+	for (uint8_t i = 0; i < numPlayers; ++i)
+	{
+		leds.fill(COLOUR[i], (midPoint[i] - playerHWidth[i] - markerWidth), markerWidth); 	// Draw Lower Marker
+		leds.fill(COLOUR[i], (midPoint[i] + playerHWidth[i]) , markerWidth); 	// Draw Upper Marker
+	}
 
 	return;
 }
@@ -220,21 +213,16 @@ void drawPlayers()
 void dRamp_W(bool dir, uint16_t pos, uint8_t len)
 {
 	// Down ramp effect
-
 	uint16_t pixelNum = pos; 	 							// Track current pixel
 	uint8_t intensity = 255;
 	uint8_t dimStep = intensity/len;
 
-
 	for (uint8_t i = 0; i < len; ++i)
 	{
 		intensity = pow (2, (i / R)) - 1;
-		// leds.setPixelColor(pixelNum, 0, 0, 255, intensity);
 
 		// Draw meteor on top of current LED state
 		leds.setPixelColor(pixelNum, (leds.getPixelColor(pixelNum) | (uint32_t) intensity<<24));
-
-		// intensity -=  dimStep;
 
 		Serial.println(intensity);
 
@@ -251,8 +239,6 @@ void dRamp_W(bool dir, uint16_t pos, uint8_t len)
 			
 			pixelNum--;
 		}
-
-
 	}
 
 	return;
