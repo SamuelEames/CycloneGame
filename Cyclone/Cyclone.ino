@@ -79,8 +79,8 @@ uint32_t COL_WHITE = 0xFF000000;
 uint16_t meteorSpeed = 600; 						// (pixels per second) Time between lighting pixels
 
 // State tracking
-gameStates currentState = ST_RUN;			// State game start up into
-gameStates lastState = ST_NULL;
+gameState GameState_Current = ST_RUN;			// State game start up into
+gameState GameState_Last = ST_NULL;
 
 
 uint8_t numPlayers = 3;								// Number of players (set during power up) <= NUM_BTNS
@@ -89,6 +89,7 @@ uint8_t	playerHWidth[NUM_BTNS];				// Length (in pixels) from midpoint to player
 																			// This kinda doubles as score
 
 uint8_t maxMarkerHWidth; 							// Max width that markers can get to
+uint8_t zoneSize = 0;
 
 
 void setup() 
@@ -110,6 +111,7 @@ void setup()
 
 	// Calculate mid points & marker widths
 	maxMarkerHWidth = NUM_LEDS / (numPlayers *2);
+	zoneSize = NUM_LEDS/numPlayers;																// Size of player zones in pixels
 
 
 	for (uint8_t i = 0; i < numPlayers; ++i)
@@ -121,7 +123,7 @@ void setup()
 
 
 	// Initialise Serial debug
-	#ifdef debugMSG
+	#ifdef DEBUG
 		Serial.begin(115200);				// Open comms line
 		while (!Serial) ; 					// Wait for serial port to be available
 
@@ -144,10 +146,95 @@ void loop()
 	static uint16_t position = 0;
 	static uint32_t lastLED_Update = 0;
 	static uint32_t lastGame_Update = 0;
+	static uint8_t btnPressed = NUM_BTNS;
 
 
-	// Check buttons - do this as much as possible
-	uint8_t btnPressed = checkButtons();
+	switch (GameState_Current)
+	{
+		case ST_RUN:
+			// Check buttons - do this as much as possible
+			btnPressed = checkButtons();
+
+			// Calculate distance we moved since last iteration
+			// distance = speed * time
+			// position += (meteorSpeed * REFRESH_INT) / 1000;
+
+			position += (meteorSpeed * (micros() - lastLED_Update)) / 1000000;
+			lastLED_Update = micros();
+
+			while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
+				position -= NUM_LEDS;
+
+			drawField();
+			dRamp_W(1, position++, pwmIntervals); // Draw meteor
+
+			leds.show();
+
+
+			if (btnPressed != NUM_BTNS)
+			{
+				// Change state
+				GameState_Current = ST_STOP;
+				GameState_Last = ST_RUN;
+
+				
+				// Flash result
+				for (uint8_t i = 0; i < 4; ++i)
+				{
+					// Draw blank field
+					drawField();
+					leds.show();
+					delay(60);
+
+					// Draw field with meteor!
+					drawField();
+					dRamp_W(1, position++, pwmIntervals);
+					leds.show();
+					delay(60);
+				}
+
+			}
+
+			break;
+
+		case ST_STOP:
+			if (GameState_Last != ST_STOP)
+			{
+				// CHECK FOR WIN/LOSS
+				// If button was pushed when meteor was outside my zone, +1 to opponents (up to limit), -2 to me
+				// 		* flash my whole zone red
+
+				if ((position >= zoneSize * btnPressed) && (position <= zoneSize * btnPressed + zoneSize))
+				{
+					leds.fill(0x0000FF00, zoneSize*btnPressed, zoneSize*btnPressed + zoneSize);
+				}
+				else
+					leds.fill(0x00FF0000, zoneSize*btnPressed, zoneSize*btnPressed + zoneSize);
+
+					leds.show();
+				// If button was pushed when meteor in my zone but outside markers, 0 to opponents, -1 to me
+				// 		* Flash my marker zone red
+				// If button pushed in my zone within markers, +1 to me!, -1 to opponents
+				// 		* flash my merker zone green!
+
+
+				// Start new round with updated marker positions
+
+				// 
+				
+
+
+
+			}
+
+			break;
+
+		default:
+			break;
+	}
+
+
+
 
 		// If button press
 			// Work out where meteor was when button pressed
@@ -158,29 +245,6 @@ void loop()
 
 	// Update LEDs
 
-	// Calculate distance we moved since last iteration
-	// distance = speed * time
-	// position += (meteorSpeed * REFRESH_INT) / 1000;
-
-	position += (meteorSpeed * (micros() - lastLED_Update)) / 1000000;
-	lastLED_Update = micros();
-
-	while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
-		position -= NUM_LEDS;
-
-	drawField();
-	dRamp_W(1, position++, pwmIntervals); // Draw meteor
-
-	leds.show();
-
-
-	if (btnPressed != NUM_BTNS)
-	{
-		// Change Game State
-
-		while (1)
-			;
-	}
 
 }
 
@@ -189,15 +253,15 @@ void drawField()
 {
 	// Draws field design
 
-	uint8_t blockLen = NUM_LEDS/numPlayers;
+	// uint8_t zoneSize = NUM_LEDS/numPlayers;
 	uint8_t markerWidth = 3;
 
 	// Colour dim background
 	for (uint8_t i = 0; i < numPlayers; ++i)
-		leds.fill(COLOUR_DIM[i], blockLen*i, blockLen*i + blockLen);
+		leds.fill(COLOUR_DIM[i], zoneSize*i, zoneSize*i + zoneSize);
 
 	// Fill in remainder LEDs when not even split
-	leds.fill(COLOUR_DIM[numPlayers], blockLen*numPlayers, NUM_LEDS);
+	leds.fill(COLOUR_DIM[numPlayers], zoneSize*numPlayers, NUM_LEDS);
 
 	// Drawer player aim markers
 	for (uint8_t i = 0; i < numPlayers; ++i)
