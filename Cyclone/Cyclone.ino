@@ -30,7 +30,7 @@
 */
 
 //////////////////// DEBUG SETUP ////////////////////
-// #define DEBUG   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
+#define DEBUG   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef DEBUG
 	#define DPRINT(...)   Serial.print(__VA_ARGS__)   //DPRINT is a macro, debug print
 	#define DPRINTLN(...) Serial.println(__VA_ARGS__) //DPRINTLN is a macro, debug print with new line
@@ -90,6 +90,7 @@ uint8_t	playerHWidth[NUM_BTNS];				// Length (in pixels) from midpoint to player
 
 uint8_t maxMarkerHWidth; 							// Max width that markers can get to
 uint8_t zoneSize = 0;
+#define MARKER_WIDTH 4 // Ideally keep this as an even number
 
 
 void setup() 
@@ -125,9 +126,21 @@ void setup()
 	// Initialise Serial debug
 	#ifdef DEBUG
 		Serial.begin(115200);				// Open comms line
-		while (!Serial) ; 					// Wait for serial port to be available
+		// while (!Serial) ; 					// Wait for serial port to be available
 
 		Serial.println(F("Wassup?"));
+
+		for (uint8_t i = 0; i < numPlayers; ++i)
+		{
+			Serial.print(F("Zone "));
+			Serial.print(i, DEC);
+			Serial.print(F("\t Start = "));
+			Serial.print(zoneSize * i, DEC);
+			Serial.print(F("\t End = "));
+			Serial.println(zoneSize*i + zoneSize, DEC);
+		}
+
+
 	#endif
 
 	// Let the games begin!
@@ -160,6 +173,7 @@ void loop()
 			// position += (meteorSpeed * REFRESH_INT) / 1000;
 
 			position += (meteorSpeed * (micros() - lastLED_Update)) / 1000000;
+			// position = 0;
 			lastLED_Update = micros();
 
 			while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
@@ -176,6 +190,9 @@ void loop()
 				// Change state
 				GameState_Current = ST_STOP;
 				GameState_Last = ST_RUN;
+
+				DPRINT(F("Button pressed = "));
+				DPRINTLN(btnPressed);
 
 				
 				// Flash result
@@ -201,27 +218,97 @@ void loop()
 			if (GameState_Last != ST_STOP)
 			{
 				// CHECK FOR WIN/LOSS
-				// If button was pushed when meteor was outside my zone, +1 to opponents (up to limit), -2 to me
-				// 		* flash my whole zone red
-
-				if ((position >= zoneSize * btnPressed) && (position <= zoneSize * btnPressed + zoneSize))
-				{
-					leds.fill(0x0000FF00, zoneSize*btnPressed, zoneSize*btnPressed + zoneSize);
-				}
-				else
-					leds.fill(0x00FF0000, zoneSize*btnPressed, zoneSize*btnPressed + zoneSize);
-
-					leds.show();
 				// If button was pushed when meteor in my zone but outside markers, 0 to opponents, -1 to me
 				// 		* Flash my marker zone red
+				// If button was pushed when meteor was outside my zone, +1 to opponents (up to limit), -2 to me
+				// 		* flash my whole zone red
 				// If button pushed in my zone within markers, +1 to me!, -1 to opponents
 				// 		* flash my merker zone green!
+
+				// If button was pushed ... in my zone
+				if ((position >= zoneSize * btnPressed) && (position < (zoneSize * btnPressed + zoneSize)))
+				{
+
+					// ... within markers -- > Win!
+					// 												5 					- 4 - 1 0
+					if ((position >= midPoint[btnPressed] - playerHWidth[btnPressed] - MARKER_WIDTH/2) && (position < midPoint[btnPressed] + playerHWidth[btnPressed] + MARKER_WIDTH/2))
+					{
+						DPRINTLN(F("WIN"));
+						leds.fill(0x0000FF00, midPoint[btnPressed] - playerHWidth[btnPressed], playerHWidth[btnPressed] *2);
+						
+						// Shift markers according to outcome
+						for (uint8_t i = 0; i < numPlayers; ++i)
+						{
+							if (i == btnPressed)			// Reward me!
+								playerHWidth[i] -= 1;
+							else 											// penalize opponents
+								playerHWidth[i] += 1;
+						}
+					}
+					// ... not within markers
+					else
+					{
+						DPRINTLN(F("Lose"));
+						leds.fill(0x00FF0000, midPoint[btnPressed] - playerHWidth[btnPressed], playerHWidth[btnPressed] *2);
+					
+						// Shift markers according to outcome
+						for (uint8_t i = 0; i < numPlayers; ++i)
+						{
+							if (i == btnPressed)			// Penalize me! - Do nothing for opponents
+								playerHWidth[i] += 1;
+						}
+					}
+
+
+					DPRINT(F("Position = "));
+					DPRINT(position);
+					DPRINT(F("\t LMarker = "));
+					DPRINT(midPoint[btnPressed] - playerHWidth[btnPressed] - MARKER_WIDTH/2);
+					DPRINT(F("\t UMarker = "));
+					DPRINTLN(midPoint[btnPressed] + playerHWidth[btnPressed] + MARKER_WIDTH/2);
+				}
+
+				else
+				{
+					DPRINTLN(F("Really bad lose"));
+					leds.fill(0x00FF0000, zoneSize*btnPressed, zoneSize);
+					for (uint8_t i = 0; i < numPlayers; ++i)
+					{
+						if (i == btnPressed)					// penalize me
+							playerHWidth[i] += 2;
+						else if (playerHWidth[i] > 6)	// reward opponents - only up to half width = 4
+							playerHWidth[i] -= 1;
+					}
+				}
+
+
+				// Check updated player widths are within allowable bounds
+				for (uint8_t i = 0; i < numPlayers; ++i)
+				{
+					// Don't allow markers to move outside of player zones
+					if (playerHWidth[i] > zoneSize/2 - MARKER_WIDTH)
+						playerHWidth[i] = zoneSize/2 - MARKER_WIDTH;
+
+					// If markers on top of eachother - WIN!
+					if (playerHWidth[i] == 0)
+						; // Do some sort of rainbow animation thing in winner player zone
+				}
+
+				
+
+				leds.show();
 
 
 				// Start new round with updated marker positions
 
 				// 
-				
+
+				delay(1000);
+				GameState_Current = ST_RUN;
+				GameState_Last = ST_NULL;
+
+				// Continue from where we left off
+				lastLED_Update = micros();
 
 
 
@@ -254,7 +341,7 @@ void drawField()
 	// Draws field design
 
 	// uint8_t zoneSize = NUM_LEDS/numPlayers;
-	uint8_t markerWidth = 3;
+
 
 	// Colour dim background
 	for (uint8_t i = 0; i < numPlayers; ++i)
@@ -266,8 +353,8 @@ void drawField()
 	// Drawer player aim markers
 	for (uint8_t i = 0; i < numPlayers; ++i)
 	{
-		leds.fill(COLOUR[i], (midPoint[i] - playerHWidth[i] - markerWidth), markerWidth); 	// Draw Lower Marker
-		leds.fill(COLOUR[i], (midPoint[i] + playerHWidth[i]) , markerWidth); 	// Draw Upper Marker
+		leds.fill(COLOUR[i], (midPoint[i] - playerHWidth[i] - MARKER_WIDTH), MARKER_WIDTH); 	// Draw Lower Marker
+		leds.fill(COLOUR[i], (midPoint[i] + playerHWidth[i]) , MARKER_WIDTH); 	// Draw Upper Marker
 	}
 
 	return;
@@ -277,18 +364,24 @@ void drawField()
 void dRamp_W(bool dir, uint16_t pos, uint8_t len)
 {
 	// Down ramp effect
-	uint16_t pixelNum = pos; 	 							// Track current pixel
-	uint8_t intensity = 255;
-	uint8_t dimStep = intensity/len;
+	int16_t pixelNum = pos-len+1; 	 							// Track current pixel
+	uint8_t intensity;
 
+
+	// Ensure position is within bounds of LED string
+	while (pixelNum < 0)
+		pixelNum += NUM_LEDS;
+
+	while (pixelNum > NUM_LEDS)
+		pixelNum -= NUM_LEDS;
+
+	// Draw it
 	for (uint8_t i = 0; i < len; ++i)
 	{
-		intensity = pow (2, (i / R)) - 1;
+		intensity = (pow (2, (i / R)) - 1);
 
 		// Draw meteor on top of current LED state
 		leds.setPixelColor(pixelNum, (leds.getPixelColor(pixelNum) | (uint32_t) intensity<<24));
-
-		Serial.println(intensity);
 
 		// Go to next LED & loop around if going off edge of pixel strip
 		if (dir)
