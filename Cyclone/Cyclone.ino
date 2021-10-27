@@ -85,13 +85,15 @@ gameState GameState_Last = ST_NULL;
 
 uint8_t numPlayers = 3;								// Number of players (set during power up) <= NUM_BTNS
 uint16_t midPoint[NUM_BTNS];					// Midpoint (pixelNum) of each player zone
-uint8_t	playerHWidth[NUM_BTNS];				// Length (in pixels) from midpoint to player markers
+uint8_t	halfWidth[NUM_BTNS];				// Length (in pixels) from midpoint to player markers
 																			// This kinda doubles as score
 
 uint8_t maxMarkerHWidth; 							// Max width that markers can get to
 uint8_t zoneSize = 0;
 #define MARKER_WIDTH 4 // Ideally keep this as an even number
 
+#define IDLE_RESET_TIMER 30000					// Time (ms) before game variables are reset to original values 
+uint8_t def_halfWidth = 0;
 
 void setup() 
 {
@@ -114,11 +116,12 @@ void setup()
 	maxMarkerHWidth = NUM_LEDS / (numPlayers *2);
 	zoneSize = NUM_LEDS/numPlayers;																// Size of player zones in pixels
 
+	def_halfWidth = maxMarkerHWidth / 4;
 
 	for (uint8_t i = 0; i < numPlayers; ++i)
 	{
 		midPoint[i] = maxMarkerHWidth + (NUM_LEDS/numPlayers * i); 	// Calculate midpoints
-		playerHWidth[i] = maxMarkerHWidth / 4;											// Initial marker widths
+		halfWidth[i] = def_halfWidth;											// Initial marker widths
 	}
 
 
@@ -139,8 +142,6 @@ void setup()
 			Serial.print(F("\t End = "));
 			Serial.println(zoneSize*i + zoneSize, DEC);
 		}
-
-
 	#endif
 
 	// Let the games begin!
@@ -157,9 +158,11 @@ void loop()
 {
 
 	static uint16_t position = 0;
-	static uint32_t lastLED_Update = 0;
-	static uint32_t lastGame_Update = 0;
+	static uint32_t t_lastLED_Update = 0;
+	static uint32_t t_lastGame_Update = millis();
 	static uint8_t btnPressed = NUM_BTNS;
+
+	static uint32_t firstPixelHue = 0;
 
 
 	switch (GameState_Current)
@@ -172,9 +175,9 @@ void loop()
 			// distance = speed * time
 			// position += (meteorSpeed * REFRESH_INT) / 1000;
 
-			position += (meteorSpeed * (micros() - lastLED_Update)) / 1000000;
+			position += (meteorSpeed * (micros() - t_lastLED_Update)) / 1000000;
 			// position = 0;
-			lastLED_Update = micros();
+			t_lastLED_Update = micros();
 
 			while	(position >= NUM_LEDS)		// Wrap around if we've gone off the edge of the tape
 				position -= NUM_LEDS;
@@ -194,6 +197,8 @@ void loop()
 				DPRINT(F("Button pressed = "));
 				DPRINTLN(btnPressed);
 
+				t_lastGame_Update = millis();
+
 				
 				// Flash result
 				for (uint8_t i = 0; i < 4; ++i)
@@ -211,6 +216,10 @@ void loop()
 				}
 
 			}
+
+			// reset to initial game state if no one has used in a while
+			if (t_lastGame_Update + IDLE_RESET_TIMER < millis())
+				resetGame();
 
 			break;
 
@@ -230,42 +239,40 @@ void loop()
 				{
 
 					// ... within markers -- > Win!
-					// 												5 					- 4 - 1 0
-					if ((position >= midPoint[btnPressed] - playerHWidth[btnPressed] - MARKER_WIDTH/2) && (position < midPoint[btnPressed] + playerHWidth[btnPressed] + MARKER_WIDTH/2))
+					if ((position >= midPoint[btnPressed] - halfWidth[btnPressed] - MARKER_WIDTH/2) && (position < midPoint[btnPressed] + halfWidth[btnPressed] + MARKER_WIDTH/2))
 					{
 						DPRINTLN(F("WIN"));
-						leds.fill(0x0000FF00, midPoint[btnPressed] - playerHWidth[btnPressed], playerHWidth[btnPressed] *2);
+						leds.fill(0x0000FF00, midPoint[btnPressed] - halfWidth[btnPressed] - MARKER_WIDTH/2, halfWidth[btnPressed] *2 + MARKER_WIDTH);
 						
 						// Shift markers according to outcome
 						for (uint8_t i = 0; i < numPlayers; ++i)
 						{
 							if (i == btnPressed)			// Reward me!
-								playerHWidth[i] -= 1;
+								halfWidth[i] -= 1;
 							else 											// penalize opponents
-								playerHWidth[i] += 1;
+								halfWidth[i] += 1;
 						}
 					}
 					// ... not within markers
 					else
 					{
 						DPRINTLN(F("Lose"));
-						leds.fill(0x00FF0000, midPoint[btnPressed] - playerHWidth[btnPressed], playerHWidth[btnPressed] *2);
+						leds.fill(0x00FF0000, midPoint[btnPressed] - halfWidth[btnPressed] - MARKER_WIDTH/2, halfWidth[btnPressed] *2 + MARKER_WIDTH);
 					
 						// Shift markers according to outcome
 						for (uint8_t i = 0; i < numPlayers; ++i)
 						{
 							if (i == btnPressed)			// Penalize me! - Do nothing for opponents
-								playerHWidth[i] += 1;
+								halfWidth[i] += 1;
 						}
 					}
-
 
 					DPRINT(F("Position = "));
 					DPRINT(position);
 					DPRINT(F("\t LMarker = "));
-					DPRINT(midPoint[btnPressed] - playerHWidth[btnPressed] - MARKER_WIDTH/2);
+					DPRINT(midPoint[btnPressed] - halfWidth[btnPressed] - MARKER_WIDTH/2);
 					DPRINT(F("\t UMarker = "));
-					DPRINTLN(midPoint[btnPressed] + playerHWidth[btnPressed] + MARKER_WIDTH/2);
+					DPRINTLN(midPoint[btnPressed] + halfWidth[btnPressed] + MARKER_WIDTH/2);
 				}
 
 				else
@@ -275,43 +282,72 @@ void loop()
 					for (uint8_t i = 0; i < numPlayers; ++i)
 					{
 						if (i == btnPressed)					// penalize me
-							playerHWidth[i] += 2;
-						else if (playerHWidth[i] > 6)	// reward opponents - only up to half width = 4
-							playerHWidth[i] -= 1;
+							halfWidth[i] += 2;
+						else if (halfWidth[i] > 6)	// reward opponents - only up to half width = 4
+							halfWidth[i] -= 1;
 					}
 				}
-
 
 				// Check updated player widths are within allowable bounds
 				for (uint8_t i = 0; i < numPlayers; ++i)
 				{
 					// Don't allow markers to move outside of player zones
-					if (playerHWidth[i] > zoneSize/2 - MARKER_WIDTH)
-						playerHWidth[i] = zoneSize/2 - MARKER_WIDTH;
-
-					// If markers on top of eachother - WIN!
-					if (playerHWidth[i] == 0)
-						; // Do some sort of rainbow animation thing in winner player zone
+					if (halfWidth[i] > zoneSize/2 - MARKER_WIDTH)
+						halfWidth[i] = zoneSize/2 - MARKER_WIDTH;
 				}
 
-				
+				DPRINT(F("Halfwidth = "));
+				DPRINTLN(halfWidth[btnPressed]);
+
+				// If markers on top of eachother - WIN!
+				if (halfWidth[btnPressed] <= 4)
+				{
+					DPRINTLN(F("WINNER"));
+					// Do some sort of rainbow animation thing in winner player zone
+					GameState_Current = ST_WINNER_WINNER;
+					GameState_Last = ST_STOP;
+					t_lastGame_Update = millis();
+				}	
+				else
+				{
+
+					leds.show();
+
+					// Start new round with updated marker positions
+					delay(1000);
+					GameState_Current = ST_RUN;
+					GameState_Last = ST_STOP;
+
+					// Continue meteor from where we left off
+					t_lastLED_Update = micros();
+				}
+			}
+
+			break;
+
+
+		case ST_WINNER_WINNER:
+			// Play rainbow effect on winning zone
+			if ((t_lastGame_Update + 1000) > millis())
+			{
+				for(uint16_t i = btnPressed * zoneSize; i < btnPressed * zoneSize + zoneSize; i++) 
+				{
+					uint32_t pixelHue = firstPixelHue + (i * 65536L / NUM_LEDS);
+					leds.setPixelColor(i, leds.gamma32(leds.ColorHSV(pixelHue)));
+				}
+
+				firstPixelHue += 2000; 					// Shift colour wheel
 
 				leds.show();
-
-
-				// Start new round with updated marker positions
-
-				// 
-
-				delay(1000);
+			}
+			else
+			{
 				GameState_Current = ST_RUN;
-				GameState_Last = ST_NULL;
+				GameState_Last = ST_WINNER_WINNER;
 
-				// Continue from where we left off
-				lastLED_Update = micros();
+				resetGame();
 
-
-
+				t_lastLED_Update = micros();		// Continue meteor from where we left off
 			}
 
 			break;
@@ -320,19 +356,16 @@ void loop()
 			break;
 	}
 
+}
 
 
+void resetGame()
+{
+	// Resets game variables back to default starting values
+	for (uint8_t i = 0; i < numPlayers; ++i)
+		halfWidth[i] = def_halfWidth;
 
-		// If button press
-			// Work out where meteor was when button pressed
-			// If it's close enough to button, WIN!
-			// If else, fail
-			// But also throw in some gambling logic to balance wins/losses 
-
-
-	// Update LEDs
-
-
+	return;
 }
 
 
@@ -353,8 +386,8 @@ void drawField()
 	// Drawer player aim markers
 	for (uint8_t i = 0; i < numPlayers; ++i)
 	{
-		leds.fill(COLOUR[i], (midPoint[i] - playerHWidth[i] - MARKER_WIDTH), MARKER_WIDTH); 	// Draw Lower Marker
-		leds.fill(COLOUR[i], (midPoint[i] + playerHWidth[i]) , MARKER_WIDTH); 	// Draw Upper Marker
+		leds.fill(COLOUR[i], (midPoint[i] - halfWidth[i] - MARKER_WIDTH), MARKER_WIDTH); 	// Draw Lower Marker
+		leds.fill(COLOUR[i], (midPoint[i] + halfWidth[i]) , MARKER_WIDTH); 	// Draw Upper Marker
 	}
 
 	return;
