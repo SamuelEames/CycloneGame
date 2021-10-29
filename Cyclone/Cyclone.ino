@@ -72,7 +72,6 @@ Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRBW + NEO_KHZ800);
 #define NUM_BTN_LEDS 	12
 CRGB btnleds[NUM_BTNS][NUM_BTN_LEDS];
 
-
 const int pwmIntervals = 50;
 float R;
 
@@ -93,7 +92,6 @@ uint32_t COLOUR_DIM[] = {0x00000A0A, 0x000A0700, 0x0007000A, 0x00000A00};
 // State tracking
 gameState GameState_Current = ST_RUN;			// State game start up into
 gameState GameState_Last = ST_NULL;
-
 
 uint8_t 	numPlayers = 3;							// Number of players (set during power up) <= NUM_BTNS (Not implemented)
 uint16_t 	midPoint[NUM_BTNS];					// Midpoint (pixelNum) of each player zone
@@ -125,10 +123,7 @@ void setup()
 {
 	// Initialise IO
 	for (uint8_t i = 0; i < NUM_BTNS; ++i)
-	{
 		pinMode(btnBtnPin[i], INPUT_PULLUP);
-		// btnState_last[i] = 1;				// Set initial assumed button state
-	}
 
 	pinMode(RAND_ANALOG_PIN, INPUT);
 
@@ -156,12 +151,7 @@ void setup()
 	{
 		midPoint[i] = maxMarkerHWidth + (NUM_LEDS/numPlayers * i); 	// Calculate midpoints
 		halfWidth[i] = def_halfWidth;											// Initial marker widths
-
-		// Light button pixels their respective colours
-		fill_solid(btnleds[i], NUM_BTN_LEDS, COLOUR[i]);
 	}
-
-	FastLED.show();
 
 	// Initialise Serial debug
 	#ifdef DEBUG
@@ -197,6 +187,17 @@ void loop()
 	switch (GameState_Current)
 	{
 		case ST_RUN:
+
+			if (GameState_Last != ST_RUN)
+			{
+				GameState_Last = ST_RUN;
+
+				// Colour button LEDs - only need to do this once
+				for (uint8_t i = 0; i < numPlayers; ++i)
+					fill_solid(btnleds[i], NUM_BTN_LEDS, COLOUR[i]);
+				FastLED.show();
+			}
+
 			// Check buttons - do this as much as possible
 			btnPressed = checkButtons();
 
@@ -205,7 +206,6 @@ void loop()
 			// position += (meteorSpeed * REFRESH_INT) / 1000;
 
 			position += (meteorSpeed * (micros() - t_lastLED_Update)) / 1000000;
-			// position = 0;
 			t_lastLED_Update = micros();
 
 			while	(position >= NUM_LEDS)					// Wrap around if we've gone off the edge of the tape
@@ -215,7 +215,6 @@ void loop()
 			dRamp_W(1, position, pwmIntervals); 	// Draw meteor
 
 			leds.show();
-
 
 			if (btnPressed != NUM_BTNS)
 			{
@@ -233,13 +232,17 @@ void loop()
 				{
 					// Draw blank field
 					drawField();
+					fill_solid(btnleds[btnPressed], NUM_BTN_LEDS, COLOUR_DIM[btnPressed]);
 					leds.show();
+					FastLED.show();
 					delay(50);
 
 					// Draw field with meteor!
 					drawField();
 					dRamp_W(1, position, pwmIntervals);
+					fill_solid(btnleds[btnPressed], NUM_BTN_LEDS, COLOUR[btnPressed]);
 					leds.show();
+					FastLED.show();
 					delay(50);
 				}
 			}
@@ -270,7 +273,8 @@ void loop()
 					{
 						DPRINTLN(F("WIN"));
 						leds.fill(COL_GREEN, midPoint[btnPressed] - halfWidth[btnPressed] - MARKER_WIDTH/2, halfWidth[btnPressed] *2 + MARKER_WIDTH);
-						
+						fill_solid(btnleds[btnPressed], NUM_BTN_LEDS, COL_GREEN);
+
 						win = true;
 
 						// Shift markers according to outcome
@@ -287,7 +291,8 @@ void loop()
 					{
 						DPRINTLN(F("Lose"));
 						leds.fill(COL_RED, midPoint[btnPressed] - halfWidth[btnPressed] - MARKER_WIDTH/2, halfWidth[btnPressed] *2 + MARKER_WIDTH);
-					
+						fill_solid(btnleds[btnPressed], NUM_BTN_LEDS, COL_RED);
+
 						// Shift markers according to outcome
 						for (uint8_t i = 0; i < numPlayers; ++i)
 						{
@@ -308,6 +313,8 @@ void loop()
 				{
 					DPRINTLN(F("Really bad lose"));
 					leds.fill(COL_RED, zoneSize*btnPressed, zoneSize);
+					fill_solid(btnleds[btnPressed], NUM_BTN_LEDS, COL_RED);
+
 					for (uint8_t i = 0; i < numPlayers; ++i)
 					{
 						if (i == btnPressed)					// penalize me
@@ -348,6 +355,7 @@ void loop()
 				else
 				{
 					leds.show();
+					FastLED.show();
 
 					// Start new round with updated marker positions
 					delay(1000);
@@ -405,6 +413,7 @@ void loop()
 void winnerWinner()
 {
 	static uint32_t firstPixelHue;
+	static uint8_t  btnled_FXStep = 0;
 
 	// Play rainbow effect on winning zone
 	for(uint16_t i = btnPressed * zoneSize; i < btnPressed * zoneSize + zoneSize; i++) 
@@ -415,7 +424,16 @@ void winnerWinner()
 
 	firstPixelHue += 2000; 					// Shift colour wheel
 
+	// Play effect on button - spin button colour
+	fill_solid(btnleds[btnPressed], NUM_BTN_LEDS, COL_BLACK);
+	btnleds[btnPressed][btnled_FXStep++] = COLOUR[btnPressed];
+	
+	if (btnled_FXStep >= NUM_BTN_LEDS)
+		btnled_FXStep = 0;
+
+	// Show the things!
 	leds.show();
+	FastLED.show();
 
 	return;
 }
@@ -425,6 +443,8 @@ void superWin()
 	// Same as winnerWinner() except has white sparkles on top
 	uint16_t randomPix;
 	static uint32_t firstPixelHue;
+	static uint8_t  btnled_FXStep = 0;
+	const uint8_t btnled_hueStep = 255/NUM_BTN_LEDS;
 
 	for(uint16_t i = btnPressed * zoneSize; i < btnPressed * zoneSize + zoneSize; i++) 
 	{
@@ -438,7 +458,15 @@ void superWin()
 	randomPix = random(btnPressed * zoneSize, btnPressed * zoneSize + zoneSize);
 	leds.setPixelColor(randomPix, (leds.getPixelColor(randomPix) | COL_WHITE));
 
+	// Play effect on button - spin button colour
+	fill_rainbow(btnleds[btnPressed], NUM_BTN_LEDS, btnled_hueStep * btnled_FXStep++, btnled_hueStep);
+	
+	if (btnled_FXStep >= NUM_BTN_LEDS)
+		btnled_FXStep = 0;
+
+	// Show the things!
 	leds.show();
+	FastLED.show();
 
 	return;
 }
@@ -460,23 +488,18 @@ void drawField()
 {
 	// Draws field design
 
-	// Colour dim background
-	for (uint8_t i = 0; i < numPlayers; ++i)
-		leds.fill(COLOUR_DIM[i], zoneSize*i, zoneSize*i + zoneSize);
-
-	// Fill in remainder LEDs when not even split
-	leds.fill(COLOUR_DIM[numPlayers], zoneSize*numPlayers, NUM_LEDS);
-
-	// Drawer player aim markers
 	for (uint8_t i = 0; i < numPlayers; ++i)
 	{
+		// Colour dim background
+		leds.fill(COLOUR_DIM[i], zoneSize*i, zoneSize*i + zoneSize);
+
+		// Drawer player aim markers
 		leds.fill(COLOUR[i], (midPoint[i] - halfWidth[i] - MARKER_WIDTH), MARKER_WIDTH); 	// Draw Lower Marker
 		leds.fill(COLOUR[i], (midPoint[i] + halfWidth[i]) , MARKER_WIDTH); 	// Draw Upper Marker
 	}
 
-	// Colour player buttons
-	for (uint8_t i = 0; i < numPlayers; ++i) // yes I realise I have the same for loop three times
-		fill_solid( btnleds[i], NUM_BTN_LEDS, COLOUR[i] << 2);
+	// Fill in remainder LEDs when not even split
+	leds.fill(COLOUR_DIM[numPlayers], zoneSize*numPlayers, NUM_LEDS);
 
 	return;
 }
