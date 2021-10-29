@@ -2,5 +2,5 @@
 
 
 // Game State 			0				1				2		
-enum gameState {ST_NULL, ST_RUN, ST_STOP, ST_WINNER_WINNER};
+enum gameState {ST_NULL, ST_RUN, ST_STOP, ST_WINNER_WINNER, ST_SUPER_WIN};
 
