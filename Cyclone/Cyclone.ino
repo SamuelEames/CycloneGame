@@ -40,7 +40,6 @@
 #endif
 
 
-
 //////////////////// LIBRARIES ////////////////////
 #include <Adafruit_NeoPixel.h>
 #include "ENUMVars.h"
@@ -75,7 +74,6 @@ CRGB btnleds[NUM_BTNS][NUM_BTN_LEDS];
 const int pwmIntervals = 50;
 float R;
 
-
 // COLOURS -- 0xWWRRGGBB, Cyan, 	Yellow, 		Magenta		Green??
 uint32_t COLOUR[] = {0x0000FFFF, 0x00FFDD00, 0x007700FF, 0x0000FF00};
 uint32_t COLOUR_DIM[] = {0x00000A0A, 0x000A0700, 0x0007000A, 0x00000A00};
@@ -86,7 +84,6 @@ uint32_t COLOUR_DIM[] = {0x00000A0A, 0x000A0700, 0x0007000A, 0x00000A00};
 
 
 //////////////////// MISC VARS ////////////////////
-
 #define DEBOUNCE 			5							// (ms) Button debounce time
 
 // State tracking
@@ -104,9 +101,9 @@ uint8_t 	zoneSize;										// Size (pixels) of a player zone (initiated in setu
 
 #define 	IDLE_RESET_TIMER 30000			// Time (ms) before game variables are reset to original values 
 
-#define 	METEOR_SPEED_MIN 	500				// (pixels per second) Time between lighting pixels
+#define 	METEOR_SPEED_MIN 	400				// (pixels per second) Time between lighting pixels
 #define 	METEOR_SPEED_DEF	600
-#define 	METEOR_SPEED_MAX 	700
+#define 	METEOR_SPEED_MAX 	800
 #define 	METEOR_SPEED_SUPER 1200 		// If someone superWins
 uint16_t 	meteorSpeed = METEOR_SPEED_DEF; 					
 
@@ -116,7 +113,6 @@ uint8_t		halfWidth[NUM_BTNS];				// Length (in pixels) from midpoint to player m
 uint8_t 	btnPressed = NUM_BTNS;  		// Holds number of last button pressed
 uint32_t 	t_lastLED_Update;  					// Time (micros) LEDs were last updated
 uint32_t 	t_lastGame_Update;  				// Time (millis) last button was pressed used to reset game after 30 seconds of inactivity
-
 
 
 void setup() 
@@ -156,7 +152,7 @@ void setup()
 	// Initialise Serial debug
 	#ifdef DEBUG
 		Serial.begin(115200);					// Open comms line
-		// while (!Serial) ; 					// Wait for serial port to be available
+		while (!Serial) ; 					// Wait for serial port to be available
 
 		Serial.println(F("Wassup?"));
 
@@ -253,6 +249,7 @@ void loop()
 
 			break;
 
+
 		case ST_STOP:
 			if (GameState_Last != ST_STOP)
 			{
@@ -267,7 +264,6 @@ void loop()
 				// If button was pushed ... in my zone
 				if ((position >= zoneSize * btnPressed) && (position < (zoneSize * btnPressed + zoneSize)))
 				{
-
 					// ... in my zone and within markers -- > I Win!
 					if ((position >= midPoint[btnPressed] - halfWidth[btnPressed] - MARKER_WIDTH/2) && (position < midPoint[btnPressed] + halfWidth[btnPressed] + MARKER_WIDTH/2))
 					{
@@ -277,11 +273,20 @@ void loop()
 
 						win = true;
 
+						// meteorSpeed = random(METEOR_SPEED_MIN, METEOR_SPEED_MAX); // change meteor speed for next time
+
 						// Shift markers according to outcome
 						for (uint8_t i = 0; i < numPlayers; ++i)
 						{
 							if (i == btnPressed)			// Reward me!
-								halfWidth[i] -= 2;
+							{
+								if (halfWidth[i] <= 2) 			// If close to winning - move in slower
+									halfWidth[i] -= 1;
+								else if ((halfWidth[i] > def_halfWidth) || (position == midPoint[i])) // if ages away or spot on midpoint, move in heaps
+									halfWidth[i] -= 3;
+								else
+									halfWidth[i] -= 2;
+							}
 							else 											// penalize opponents
 								halfWidth[i] += 1;
 						}
@@ -358,7 +363,7 @@ void loop()
 					FastLED.show();
 
 					// Start new round with updated marker positions
-					delay(1000);
+					delay(random(500, 1200));				// Wait random time length so that it's harder for players to anticipate restart
 					GameState_Current = ST_RUN;
 					GameState_Last = ST_STOP;
 
@@ -437,6 +442,7 @@ void winnerWinner()
 
 	return;
 }
+
 
 void superWin()
 {
